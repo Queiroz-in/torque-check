@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#14181f">
+<title>Torque Check</title>
+<style>
+  :root {
+    --bg: #f3f4f6;
+    --card: #ffffff;
+    --txt: #14181f;
+    --sub: #5b6472;
+    --linha: #dde1e7;
+    --primaria: #0b62d6;
+    --ok: #138a3e;
+    --ok-bg: #e5f6ec;
+    --erro: #c62828;
+    --erro-bg: #fdecec;
+    --alerta: #a35b00;
+    --alerta-bg: #fff4e0;
+    --topo: #14181f;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--txt); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { min-height: 100vh; padding-bottom: env(safe-area-inset-bottom); }
+  header { background: var(--topo); color: #fff; padding: 14px 16px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 18px; font-weight: 700; letter-spacing: .3px; flex: 1; }
+  header button { background: transparent; color: #fff; border: 1px solid #ffffff40; border-radius: 8px; padding: 8px 12px; font-size: 14px; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  .tela { display: none; }
+  .tela.ativa { display: block; }
+  .card { background: var(--card); border: 1px solid var(--linha); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  h2 { font-size: 17px; margin-bottom: 10px; }
+  p.sub, .sub { color: var(--sub); font-size: 14px; line-height: 1.45; }
+  label { display: block; font-size: 14px; font-weight: 600; margin: 12px 0 6px; }
+  input, select, textarea { width: 100%; font-size: 16px; padding: 12px; border: 1px solid var(--linha); border-radius: 10px; background: #fff; color: var(--txt); }
+  textarea { min-height: 70px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 15px; font-size: 16px; font-weight: 700; border-radius: 12px; border: none; background: var(--primaria); color: #fff; margin-top: 12px; cursor: pointer; }
+  .btn.sec { background: #e8ecf2; color: var(--txt); }
+  .btn.perigo { background: var(--erro); }
+  .btn:disabled { opacity: .5; }
+  .linha-btn { display: flex; gap: 10px; }
+  .linha-btn .btn { flex: 1; }
+  .aviso { border-radius: 10px; padding: 12px; font-size: 14px; line-height: 1.45; margin-top: 10px; }
+  .aviso.ok { background: var(--ok-bg); color: var(--ok); }
+  .aviso.erro { background: var(--erro-bg); color: var(--erro); }
+  .aviso.alerta { background: var(--alerta-bg); color: var(--alerta); }
+  .oculto { display: none !important; }
+
+  /* Inspeção */
+  .progresso { height: 8px; background: var(--linha); border-radius: 99px; overflow: hidden; margin: 6px 0 2px; }
+  .progresso > div { height: 100%; background: var(--ok); width: 0; transition: width .3s; }
+  .item-atual .pos { font-size: 13px; color: var(--sub); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  .item-atual .desc { font-size: 20px; font-weight: 700; margin: 4px 0 10px; }
+  .especificacao { display: flex; gap: 10px; }
+  .especificacao > div { flex: 1; background: #f6f7f9; border-radius: 10px; padding: 10px; text-align: center; }
+  .especificacao b { display: block; font-size: 22px; }
+  .especificacao span { font-size: 12px; color: var(--sub); }
+  .camera { position: relative; background: #000; border-radius: 14px; overflow: hidden; aspect-ratio: 3 / 4; max-height: 54vh; width: 100%; margin: 0 auto; }
+  .faixa-status { position: absolute; left: 10px; right: 10px; top: 10px; border-radius: 10px; padding: 12px 14px; font-weight: 800; font-size: 18px; color: #fff; text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+  .faixa-status.ok { background: var(--ok); }
+  .faixa-status.erro { background: var(--erro); }
+  .faixa-status.alerta { background: var(--alerta); }
+  .faixa-status.lendo { background: rgba(20,24,31,.85); }
+  .camera video, .camera canvas.congelado { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .guia { position: absolute; left: 14%; width: 72%; top: 50%; aspect-ratio: 2 / 1; transform: translateY(-50%); border: 3px solid #39d353; border-radius: 10px; box-shadow: 0 0 0 9999px rgba(0,0,0,.45); pointer-events: none; }
+  .guia::after { content: "Enquadre só o visor do torquímetro aqui"; position: absolute; top: -30px; left: 0; right: 0; text-align: center; color: #fff; font-size: 13px; font-weight: 600; text-shadow: 0 1px 2px #000; }
+  .guia-circ { position: absolute; left: 14%; width: 72%; top: 50%; aspect-ratio: 1 / 1; transform: translateY(-50%); border: 3px solid #39d353; border-radius: 50%; box-shadow: 0 0 0 9999px rgba(0,0,0,.45); pointer-events: none; }
+  .guia-circ::after { content: "Encaixe o mostrador inteiro no círculo"; position: absolute; bottom: -30px; left: -20%; right: -20%; text-align: center; color: #fff; font-size: 13px; font-weight: 600; text-shadow: 0 1px 2px #000; }
+  .guia-zero { position: absolute; inset: 0; pointer-events: none; }
+  .guia-zero::before { content: "0"; position: absolute; left: 50%; top: -26px; transform: translateX(-50%); width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%; background: #39d353; color: #000; font-weight: 800; font-size: 13px; }
+  .camera .ctrl { position: absolute; bottom: 10px; right: 10px; display: flex; gap: 8px; }
+  .camera .ctrl button { background: rgba(0,0,0,.55); color: #fff; border: 1px solid #ffffff50; border-radius: 10px; padding: 8px 10px; font-size: 13px; }
+  .camera .msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; text-align: center; padding: 24px; font-size: 15px; line-height: 1.5; }
+  .btn-captura { font-size: 18px; padding: 18px; }
+  .resultado { display: flex; gap: 12px; align-items: center; }
+  .resultado img { width: 120px; border-radius: 8px; border: 1px solid var(--linha); background: #fff; }
+  .resultado .valor { font-size: 30px; font-weight: 800; }
+  .lista { list-style: none; }
+  .lista li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--linha); font-size: 14px; }
+  .lista li:last-child { border-bottom: none; }
+  .lista li.atual { font-weight: 700; }
+  .lista .st { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; flex: none; background: var(--linha); color: var(--sub); }
+  .lista .st.ok { background: var(--ok); color: #fff; }
+  .lista .st.sup { background: var(--alerta); color: #fff; }
+  .lista .st.atual { background: var(--primaria); color: #fff; }
+  .lista .nm { flex: 1; }
+  .lista .vl { color: var(--sub); white-space: nowrap; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 6px; background: var(--alerta-bg); color: var(--alerta); margin-left: 4px; }
+
+  /* Relatório */
+  .resumo { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .resumo div { background: #f6f7f9; border-radius: 10px; padding: 10px; text-align: center; }
+  .resumo b { display: block; font-size: 24px; }
+  .resumo span { font-size: 12px; color: var(--sub); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--linha); vertical-align: top; }
+  th { color: var(--sub); font-weight: 600; }
+  td img { width: 96px; border-radius: 6px; display: block; margin-top: 6px; }
+  .tabela-rolagem { overflow-x: auto; }
+  code.hash { font-size: 11px; word-break: break-all; color: var(--sub); }
+
+  .arquivo-escondido { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+  textarea#cfg-lista { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; line-height: 1.5; min-height: 190px; }
+  table.previa { margin-top: 8px; font-size: 13px; color: var(--txt); }
+  table.previa th, table.previa td { padding: 4px 6px; border-bottom: 1px solid #00000014; }
+  details.outro-arquivo { margin-top: 12px; border: 1px solid var(--linha); border-radius: 10px; padding: 10px 12px; }
+  details.outro-arquivo summary { font-size: 14px; font-weight: 600; cursor: pointer; }
+  details.outro-arquivo input[type=file] { margin-top: 10px; }
+  .torq { border: 1px solid var(--linha); border-radius: 10px; padding: 10px 12px; margin-top: 10px; font-size: 14px; }
+  .btn.mini { padding: 9px; font-size: 14px; margin-top: 8px; }
+  .check { display: flex; gap: 10px; align-items: flex-start; font-weight: 500; }
+  .check input { width: 22px; height: 22px; flex: none; margin-top: 1px; }
+  #cal-canvas { width: 100%; border-radius: 12px; display: block; touch-action: manipulation; cursor: crosshair; background: #000; }
+  dialog { border: none; border-radius: 14px; padding: 18px; width: min(440px, 92vw); }
+  dialog::backdrop { background: rgba(0,0,0,.5); }
+
+  @media print {
+    header, .nao-imprimir, .btn { display: none !important; }
+    body, .card { background: #fff; border: none; }
+    .tela { display: none !important; }
+    #tela-relatorio { display: block !important; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔧 Torque Check</h1>
+  <button id="btn-config" type="button">Configurações</button>
+</header>
+
+<main>
+  <!-- ====================== INÍCIO ====================== -->
+  <section id="tela-inicio" class="tela ativa">
+    <div id="card-continuar" class="card oculto">
+      <h2>Inspeção em andamento</h2>
+      <p class="sub" id="txt-continuar"></p>
+      <div class="linha-btn">
+        <button class="btn" id="btn-continuar" type="button">Continuar</button>
+        <button class="btn sec" id="btn-descartar" type="button">Descartar</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Nova inspeção de aperto</h2>
+      <p class="sub">Para cada parafuso da lista, o app pede uma foto do torquímetro (visor digital ou mostrador de ponteiro).
+        O item só é marcado como conferido se o valor lido na foto estiver dentro da faixa especificada.</p>
+
+      <label for="in-operador">Matrícula do inspetor</label>
+      <input id="in-operador" autocomplete="off" inputmode="text" placeholder="Ex.: 123456">
+
+      <label for="in-chassi">Chassi / VIN do veículo</label>
+      <input id="in-chassi" autocomplete="off" placeholder="Ex.: 9BM..." style="text-transform:uppercase">
+
+      <label for="in-torquimetro">Torquímetro usado</label>
+      <select id="in-torquimetro"></select>
+      <button class="btn sec" id="btn-cadastrar-analogico" type="button">Cadastrar torquímetro analógico (de relógio)</button>
+
+      <label>Lista de parafusos</label>
+      <div id="info-planilha" class="aviso ok oculto" style="margin-top:0"></div>
+      <button class="btn sec" id="btn-editar-lista" type="button">Editar lista de parafusos</button>
+      <details class="outro-arquivo">
+        <summary>Usar outro arquivo só nesta inspeção (.txt ou .csv)</summary>
+        <input id="in-planilha" type="file" accept=".txt,.csv,text/plain,text/csv">
+        <p class="sub" style="margin-top:6px"><b>.txt</b>: um parafuso por linha, <code>Nome do parafuso : torque</code>.<br>
+          <b>.csv</b> (Excel, separado por ponto e vírgula): colunas <code>item; descricao; torque_nm; min_nm; max_nm</code>.</p>
+        <div class="linha-btn">
+          <button class="btn sec mini" id="btn-exemplo" type="button">Lista de exemplo</button>
+          <button class="btn sec mini" id="btn-lista-config" type="button">Voltar à lista salva</button>
+        </div>
+      </details>
+      <div id="erro-inicio" class="aviso erro oculto"></div>
+
+      <button class="btn" id="btn-iniciar" type="button">Iniciar inspeção</button>
+    </div>
+  </section>
+
+  <!-- ====================== INSPEÇÃO ====================== -->
+  <section id="tela-inspecao" class="tela">
+    <div class="card item-atual">
+      <div class="sub" id="txt-progresso"></div>
+      <div class="sub" id="txt-ferramenta" style="font-size:12px"></div>
+      <div class="progresso"><div id="barra"></div></div>
+      <div class="pos" id="item-pos" style="margin-top:12px"></div>
+      <div class="desc" id="item-desc"></div>
+      <div class="especificacao">
+        <div><b id="item-nominal"></b><span>Nominal (N·m)</span></div>
+        <div><b id="item-faixa"></b><span>Faixa aceita (N·m)</span></div>
+      </div>
+    </div>
+
+    <div id="vaga-camera-inspecao">
+    <div class="camera" id="camera">
+      <video id="video" playsinline muted autoplay></video>
+      <canvas id="congelado" class="congelado oculto"></canvas>
+      <div class="guia" id="guia"></div>
+      <div class="guia-circ oculto" id="guia-circ"><div class="guia-zero oculto" id="guia-zero"></div></div>
+      <div class="msg oculto" id="camera-msg"></div>
+      <div class="faixa-status oculto" id="faixa-status" role="status" aria-live="polite"></div>
+      <div class="ctrl">
+        <button id="btn-lanterna" type="button" class="oculto">Lanterna</button>
+      </div>
+    </div>
+
+    </div>
+    <p class="sub oculto" id="dica-analogico" style="margin-top:8px">Torquímetro de relógio: zere o ponteiro de arraste antes de apertar, aperte, e fotografe de frente com o <b>0</b> do mostrador na marca verde.</p>
+    <button class="btn btn-captura" id="btn-capturar" type="button">📷 Fotografar torquímetro</button>
+
+    <div class="card oculto" id="card-resultado" style="margin-top:14px">
+      <div class="resultado">
+        <img id="res-img" alt="Recorte do visor">
+        <div>
+          <div class="sub">Valor lido</div>
+          <div class="valor" id="res-valor">—</div>
+          <div class="sub" id="res-motor"></div>
+        </div>
+      </div>
+      <div class="aviso" id="res-msg"></div>
+      <div id="res-alertas"></div>
+    </div>
+
+    <button class="btn sec oculto" id="btn-supervisor" type="button">Liberação do supervisor</button>
+
+    <div class="card" style="margin-top:14px">
+      <h2>Parafusos</h2>
+      <ul class="lista" id="lista-itens"></ul>
+    </div>
+    <button class="btn sec nao-imprimir" id="btn-ver-relatorio" type="button">Ver relatório parcial</button>
+  </section>
+
+  <!-- ====================== RELATÓRIO ====================== -->
+  <section id="tela-relatorio" class="tela">
+    <div class="card">
+      <h2 id="rel-titulo">Relatório de inspeção de aperto</h2>
+      <p class="sub" id="rel-cabecalho"></p>
+      <div class="resumo" style="margin-top:12px">
+        <div><b id="rel-ok">0</b><span>Conferidos por foto</span></div>
+        <div><b id="rel-sup">0</b><span>Liberados pelo supervisor</span></div>
+        <div><b id="rel-pend">0</b><span>Pendentes</span></div>
+      </div>
+      <div id="rel-status" class="aviso"></div>
+    </div>
+    <div class="card">
+      <div class="tabela-rolagem">
+        <table>
+          <thead><tr><th>Item</th><th>Faixa</th><th>Lido</th><th>Status</th></tr></thead>
+          <tbody id="rel-tabela"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card nao-imprimir">
+      <h2>Exportar evidências</h2>
+      <p class="sub">O arquivo JSON contém todas as tentativas, fotos, horários e alertas. O código abaixo (SHA-256)
+        identifica o conteúdo exportado: qualquer alteração posterior no arquivo muda esse código.</p>
+      <code class="hash" id="rel-hash"></code>
+      <div class="linha-btn">
+        <button class="btn sec" id="btn-csv" type="button">CSV</button>
+        <button class="btn sec" id="btn-json" type="button">JSON + fotos</button>
+        <button class="btn sec" id="btn-imprimir" type="button">Imprimir / PDF</button>
+      </div>
+      <button class="btn sec" id="btn-voltar-inspecao" type="button">Voltar à inspeção</button>
+      <button class="btn perigo" id="btn-nova" type="button">Encerrar e iniciar nova inspeção</button>
+    </div>
+  </section>
+
+  <!-- ====================== CONFIGURAÇÕES ====================== -->
+  <section id="tela-config" class="tela">
+    <div class="card" id="card-lista">
+      <h2>Lista de parafusos</h2>
+      <p class="sub">Um parafuso por linha, no formato <code>Nome do parafuso : torque</code> (em N·m).
+        A faixa aceita usa a tolerância padrão (em “Regras”, abaixo). Para uma faixa própria, escreva
+        <code>90 ± 5</code> ou <code>85 a 95</code>. Linhas começando com <code>#</code> são ignoradas.</p>
+      <label for="cfg-lista">Parafusos</label>
+      <textarea id="cfg-lista" rows="9" spellcheck="false" autocapitalize="off" autocomplete="off"
+        placeholder="Parafuso 1 : 90&#10;Parafuso 2 : 120&#10;Roda dianteira - porca 1 : 450 ± 20"></textarea>
+      <label class="btn sec" for="cfg-lista-arquivo" style="margin-top:10px">Carregar arquivo .txt</label>
+      <input id="cfg-lista-arquivo" type="file" accept=".txt,text/plain" class="arquivo-escondido">
+      <div class="linha-btn">
+        <button class="btn sec mini" id="btn-cfg-lista-modelo" type="button">Baixar modelo .txt</button>
+        <button class="btn sec mini" id="btn-cfg-lista-baixar" type="button">Baixar esta lista</button>
+      </div>
+      <div id="cfg-lista-info" class="aviso oculto"></div>
+    </div>
+    <div class="card">
+      <h2>Torquímetros analógicos</h2>
+      <p class="sub">Cada modelo de torquímetro de relógio é calibrado uma vez: informe a escala, fotografe o
+        mostrador e toque no traço do início e do fim da escala.</p>
+      <div id="cfg-torquimetros"></div>
+      <button class="btn sec" id="btn-cfg-novo-torq" type="button">Cadastrar torquímetro analógico</button>
+    </div>
+    <div class="card">
+      <h2>Leitura</h2>
+      <label for="cfg-confianca">Confiança mínima da leitura (0 a 1)</label>
+      <input id="cfg-confianca" type="number" min="0.5" max="1" step="0.05">
+    </div>
+    <div class="card">
+      <h2>Regras</h2>
+      <label for="cfg-tol">Tolerância padrão (%) — usada quando a lista traz só o torque</label>
+      <input id="cfg-tol" type="number" min="0" max="50" step="0.5">
+      <label for="cfg-intervalo">Tempo mínimo esperado entre dois apertos (segundos)</label>
+      <input id="cfg-intervalo" type="number" min="0" max="120" step="1">
+      <p class="sub" style="margin-top:6px">Conferências mais rápidas que isso ficam marcadas como alerta no relatório.</p>
+      <label for="cfg-tentativas">Falhas de leitura antes de liberar a opção do supervisor</label>
+      <input id="cfg-tentativas" type="number" min="1" max="10" step="1">
+      <label for="cfg-pin">Novo PIN do supervisor (deixe vazio para manter)</label>
+      <input id="cfg-pin" type="password" inputmode="numeric" autocomplete="new-password">
+      <p class="sub" id="cfg-pin-status" style="margin-top:6px"></p>
+    </div>
+    <div class="linha-btn">
+      <button class="btn sec" id="btn-cfg-voltar" type="button">Voltar</button>
+      <button class="btn" id="btn-cfg-salvar" type="button">Salvar</button>
+    </div>
+  </section>
+  <!-- ====================== CALIBRAÇÃO (ANALÓGICO) ====================== -->
+  <section id="tela-calibracao" class="tela">
+    <div class="card">
+      <h2>Torquímetro analógico (de relógio)</h2>
+      <label for="cal-nome">Nome / identificação</label>
+      <input id="cal-nome" autocomplete="off" placeholder="Ex.: Relógio 0–200 N·m, patrimônio 4521">
+      <div class="linha-btn">
+        <div style="flex:1"><label for="cal-zero">Início da escala (N·m)</label><input id="cal-zero" inputmode="decimal"></div>
+        <div style="flex:1"><label for="cal-fim">Fim da escala (N·m)</label><input id="cal-fim" inputmode="decimal"></div>
+      </div>
+      <label for="cal-divisao">Menor divisão da escala (N·m)</label>
+      <input id="cal-divisao" inputmode="decimal" placeholder="Ex.: 2">
+      <label for="cal-cor">Ponteiro que indica o valor</label>
+      <select id="cal-cor">
+        <option value="vermelho">Vermelho (ou laranja)</option>
+        <option value="escuro">Preto / escuro, em mostrador claro</option>
+        <option value="claro">Branco / claro, em mostrador escuro</option>
+      </select>
+      <label class="check"><input type="checkbox" id="cal-arraste" checked>
+        <span>Tem ponteiro de arraste (memória), que fica parado no maior valor atingido</span></label>
+    </div>
+
+    <div id="cal-etapa-foto">
+      <p class="sub" style="margin-bottom:8px">Fotografe o mostrador de frente, inteiro dentro do círculo, sem reflexo.
+        A posição do celular nesta foto é a que o inspetor vai repetir na inspeção.</p>
+      <div id="vaga-camera-calibracao"></div>
+      <button class="btn btn-captura" id="btn-cal-fotografar" type="button">📷 Fotografar mostrador</button>
+    </div>
+
+    <div id="cal-etapa-toques" class="card oculto">
+      <p class="sub" id="cal-instrucao" style="margin-bottom:10px"></p>
+      <canvas id="cal-canvas"></canvas>
+      <div class="linha-btn">
+        <button class="btn sec" id="btn-cal-refazer" type="button">Refazer toques</button>
+        <button class="btn sec" id="btn-cal-nova-foto" type="button">Nova foto</button>
+      </div>
+    </div>
+    <div id="cal-erro" class="aviso erro oculto"></div>
+
+    <div class="linha-btn">
+      <button class="btn sec" id="btn-cal-cancelar" type="button">Cancelar</button>
+      <button class="btn" id="btn-cal-salvar" type="button" disabled>Salvar torquímetro</button>
+    </div>
+  </section>
+</main>
+
+<dialog id="dlg-supervisor">
+  <h2>Liberação do supervisor</h2>
+  <p class="sub">Use só quando a foto não puder ser lida (visor danificado, reflexo forte). Fica registrado no relatório.</p>
+  <label for="sup-pin">PIN do supervisor</label>
+  <input id="sup-pin" type="password" inputmode="numeric" autocomplete="off">
+  <label for="sup-valor">Valor conferido pelo supervisor (N·m)</label>
+  <input id="sup-valor" inputmode="decimal">
+  <label for="sup-motivo">Motivo</label>
+  <textarea id="sup-motivo" placeholder="Ex.: visor com reflexo, conferido visualmente pelo supervisor"></textarea>
+  <div id="sup-erro" class="aviso erro oculto"></div>
+  <div class="linha-btn">
+    <button class="btn sec" id="sup-cancelar" type="button">Cancelar</button>
+    <button class="btn" id="sup-confirmar" type="button">Liberar item</button>
+  </div>
+</dialog>
+
+<script src="leitor.js"></script>
+<script src="leitor-analogico.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

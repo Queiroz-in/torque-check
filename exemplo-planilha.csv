@@ -1,0 +1,7 @@
+item;descricao;torque_nm;min_nm;max_nm;tolerancia_pct
+R-DE-1;Roda dianteira esquerda - porca 1;450;430;470;
+R-DE-2;Roda dianteira esquerda - porca 2;450;430;470;
+S-01;Suporte do motor lado direito;90;;;5
+S-02;Suporte do motor lado esquerdo;90;;;5
+D-01;Barra de direção - terminal;120;114;126;
+F-01;Pinça de freio dianteira - parafuso guia;32,5;30;35;

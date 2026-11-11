@@ -1,0 +1,7 @@
+# Lista de parafusos - uma linha por parafuso
+# Formato:  Nome do parafuso : torque (N·m)
+# A faixa aceita usa a tolerância padrão das configurações.
+# Para uma faixa própria, escreva por exemplo "90 ± 5" ou "85 a 95".
+# Linhas começando com # são ignoradas.
+Parafuso 1 : 90
+Parafuso 2 : 120
