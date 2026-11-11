@@ -21,8 +21,9 @@
   // Guias, em fração do quadro VISÍVEL da câmera (têm que bater com o CSS)
   const GUIA_RET = { esquerda: 0.14, largura: 0.72, proporcao: 2 }; // visor digital
   const GUIA_CIRC = { raio: 0.36, margem: 1.3 };                    // mostrador analógico
-  const HASH_IDENTICA = 6;   // bits de 256 — foto praticamente idêntica: bloqueia
-  const HASH_PARECIDA = 30;  // abaixo disso: alerta no relatório
+  // Fotos parecidas (bits diferentes de 256) só geram alerta no relatório. Porcas da
+  // mesma roda (mesmo grupo na lista) podem ter fotos quase iguais e não geram alerta.
+  const HASH_PARECIDA = 30;
   const DIGITAL = { id: 'digital', tipo: 'digital', nome: 'Digital (visor de números)' };
 
   const CONFIG_PADRAO = {
@@ -32,7 +33,9 @@
     tentativasSupervisor: 3,
     pinHash: '',
     torquimetros: [], // perfis calibrados de torquímetros analógicos
-    listaParafusos: '', // texto "Nome do parafuso : torque", uma linha por parafuso
+    listas: [],          // listas criadas ou editadas no aparelho: { id, nome, texto }
+    listasRemovidas: [], // ids de listas padrão que o usuário excluiu
+    ultimaLista: '',     // última lista escolhida na tela inicial
   };
 
   const MODELO_TXT = [
@@ -40,9 +43,12 @@
     '# Formato:  Nome do parafuso : torque (N·m)',
     '# A faixa aceita usa a tolerância padrão das configurações.',
     '# Para uma faixa própria, escreva por exemplo "90 ± 5" ou "85 a 95".',
+    '# Use "?" para torque ainda não definido.',
+    '# "×10" no fim do nome cria 10 itens (uma foto por porca).',
     '# Linhas começando com # são ignoradas.',
     'Parafuso 1 : 90',
     'Parafuso 2 : 120',
+    'Roda dianteira esquerda - porca ×10 : ?',
   ].join('\r\n');
 
   const LISTA_EXEMPLO = [
@@ -220,28 +226,55 @@
     return { nominal: +nominal.toFixed(3), min: +min.toFixed(2), max: +max.toFixed(2) };
   }
 
-  /** Lista no formato texto: "Nome do parafuso : torque", uma por linha. */
+  /**
+   * Lista no formato texto: "Nome do parafuso : torque", uma por linha.
+   *   torque "?" (ou vazio)  -> item com torque a definir
+   *   "Nome ×10 : torque"    -> 10 itens, "Nome 1 de 10" ... "Nome 10 de 10" (uma foto cada)
+   * Devolve os itens, com .resumo = uma entrada por linha (para a prévia).
+   */
   function lerListaTexto(texto, tolPct) {
     const itens = [];
-    texto.replace(/^﻿/, '').split(/\r?\n/).forEach((bruta, n) => {
+    const resumo = [];
+    texto.replace(/^\uFEFF/, '').split(/\r?\n/).forEach((bruta, n) => {
       const linha = bruta.trim();
       if (!linha || linha.startsWith('#')) return;
       const p = linha.lastIndexOf(':');
       if (p < 0) throw new Error(`Linha ${n + 1}: falta o “:” entre o nome e o torque (“${linha}”). Exemplo: Parafuso 1 : 90`);
-      const nome = linha.slice(0, p).trim();
+      let nome = linha.slice(0, p).trim();
+      let qtd = 1;
+      const mult = nome.match(/\s[×xX]\s?(\d{1,3})$/);
+      if (mult) {
+        qtd = Number(mult[1]);
+        nome = nome.slice(0, mult.index).trim();
+        if (qtd < 1 || qtd > 200) throw new Error(`Linha ${n + 1}: a quantidade “×${mult[1]}” deve ser de 1 a 200.`);
+      }
       if (!nome) throw new Error(`Linha ${n + 1}: falta o nome do parafuso antes do “:”.`);
-      const faixa = interpretarTorque(linha.slice(p + 1), tolPct);
-      if (!faixa) throw new Error(`Linha ${n + 1}: torque inválido (“${linha.slice(p + 1).trim()}”). Exemplos: 90 · 90 ± 5 · 85 a 95`);
-      itens.push(Object.assign({ id: String(itens.length + 1), descricao: nome }, faixa));
+      const txtTorque = linha.slice(p + 1).trim();
+      let faixa;
+      if (txtTorque === '' || txtTorque === '?') {
+        faixa = { nominal: null, min: null, max: null, pendente: true };
+      } else {
+        faixa = interpretarTorque(txtTorque, tolPct);
+        if (!faixa) throw new Error(`Linha ${n + 1}: torque inválido (“${txtTorque}”). Exemplos: 90 · 90 ± 5 · 85 a 95 · ? (a definir)`);
+      }
+      resumo.push(Object.assign({ nome, qtd }, faixa));
+      for (let k = 1; k <= qtd; k++) {
+        itens.push(Object.assign({
+          id: String(itens.length + 1),
+          descricao: qtd > 1 ? `${nome} ${k} de ${qtd}` : nome,
+          grupo: nome,
+        }, faixa));
+      }
     });
     if (!itens.length) throw new Error('A lista está vazia. Escreva um parafuso por linha: Nome do parafuso : torque');
+    itens.resumo = resumo;
     return itens;
   }
 
   /** Lê a lista no formato texto (Nome : torque) ou planilha CSV, detectando qual é. */
   function lerLista(texto, tolPct) {
     const tol = tolPct == null ? config.tolPadraoPct : tolPct;
-    const primeira = texto.replace(/^﻿/, '').split(/\r?\n/).map((l) => l.trim())
+    const primeira = texto.replace(/^\uFEFF/, '').split(/\r?\n/).map((l) => l.trim())
       .find((l) => l && !l.startsWith('#'));
     if (!primeira) throw new Error('A lista está vazia. Escreva um parafuso por linha: Nome do parafuso : torque');
     // CSV só quando o cabeçalho tem separador de colunas e não tem “:”
@@ -249,29 +282,66 @@
     return csv ? lerPlanilhaCSV(texto, tol) : lerListaTexto(texto, tol);
   }
 
-  function usarLista(nome, texto, origem) {
+  const pendentes = (itens) => itens.filter((i) => i.pendente);
+
+  function resumoItens(itens) {
+    const pend = pendentes(itens).length;
+    return `${itens.length} item(ns)` + (pend ? ` · <b>${pend} sem torque definido</b>` : '');
+  }
+
+  function usarLista(nome, texto, origem, idLista) {
     const info = $('info-planilha');
     const erro = $('erro-inicio');
     erro.classList.add('oculto');
     try {
       const itens = lerLista(texto);
-      planilhaCarregada = { nome, itens, texto, origem };
-      aviso(info, 'ok', `<b>${esc(nome)}</b>: ${itens.length} parafuso(s).`);
+      planilhaCarregada = { nome, itens, texto, origem, idLista };
+      const pend = pendentes(itens).length;
+      aviso(info, pend ? 'alerta' : 'ok', `<b>${esc(nome)}</b>: ${resumoItens(itens)}.` +
+        (pend ? ' Preencha os torques em <b>Editar listas</b> antes de iniciar.' : ''));
     } catch (e) {
       planilhaCarregada = null;
       aviso(info, 'erro', `<b>${esc(nome)}</b>: ${esc(e.message)}`);
     }
   }
 
-  /** Carrega a lista salva nas configurações, se o usuário não escolheu outro arquivo. */
+  /**
+   * Listas disponíveis: as padrão (listas-padrao.js), com as edições feitas no
+   * aparelho por cima, mais as listas criadas no aparelho.
+   */
+  function listasDisponiveis() {
+    const padrao = (window.LISTAS_PADRAO || []).filter((l) => !config.listasRemovidas.includes(l.id));
+    const locais = new Map(config.listas.map((l) => [l.id, l]));
+    const out = padrao.map((l) => {
+      const ed = locais.get(l.id);
+      return ed ? Object.assign({}, l, ed, { padrao: true, editada: true }) : Object.assign({}, l, { padrao: true, editada: false });
+    });
+    for (const l of config.listas) {
+      if (!(window.LISTAS_PADRAO || []).some((p) => p.id === l.id)) out.push(Object.assign({}, l, { padrao: false, editada: true }));
+    }
+    return out;
+  }
+
+  function preencherSeletorLista() {
+    const sel = $('in-lista');
+    const listas = listasDisponiveis();
+    const atual = sel.value || config.ultimaLista;
+    sel.innerHTML = listas.length
+      ? listas.map((l) => `<option value="${esc(l.id)}">${esc(l.nome)}</option>`).join('')
+      : '<option value="">Nenhuma lista cadastrada</option>';
+    if (listas.some((l) => l.id === atual)) sel.value = atual;
+  }
+
+  /** Carrega a lista do modelo escolhido, se o usuário não escolheu outro arquivo. */
   function carregarListaPadrao() {
     if (planilhaCarregada && planilhaCarregada.origem === 'arquivo') return;
-    if (config.listaParafusos && config.listaParafusos.trim()) {
-      usarLista('Lista das configurações', config.listaParafusos, 'config');
+    const lista = listasDisponiveis().find((l) => l.id === $('in-lista').value);
+    if (lista) {
+      usarLista(lista.nome, lista.texto, 'config', lista.id);
     } else {
       planilhaCarregada = null;
-      aviso($('info-planilha'), 'alerta', 'Nenhuma lista de parafusos cadastrada. Toque em <b>Editar lista</b> ' +
-        'para digitar ou carregar um arquivo .txt no formato <code>Nome do parafuso : torque</code>.');
+      aviso($('info-planilha'), 'alerta', 'Nenhuma lista de parafusos cadastrada. Toque em <b>Editar listas</b> ' +
+        'para criar uma, no formato <code>Nome do parafuso : torque</code>.');
     }
   }
 
@@ -289,6 +359,7 @@
 
   function atualizarInicio() {
     preencherSeletorTorquimetro();
+    preencherSeletorLista();
     carregarListaPadrao();
     const card = $('card-continuar');
     if (estado && !estado.inspecao.fim) {
@@ -317,6 +388,13 @@
     carregarListaPadrao();
   });
   $('btn-editar-lista').addEventListener('click', () => abrirConfig('card-lista'));
+  $('in-lista').addEventListener('change', () => {
+    config.ultimaLista = $('in-lista').value;
+    salvarConfig();
+    planilhaCarregada = null;
+    $('in-planilha').value = '';
+    carregarListaPadrao();
+  });
   $('btn-cadastrar-analogico').addEventListener('click', () => abrirCalibracao(null, 'tela-inicio'));
 
   $('btn-iniciar').addEventListener('click', () => {
@@ -326,6 +404,12 @@
     if (!operador) return aviso(erro, 'erro', 'Informe a matrícula do inspetor.');
     if (!chassi) return aviso(erro, 'erro', 'Informe o chassi / VIN do veículo.');
     if (!planilhaCarregada) return aviso(erro, 'erro', 'Cadastre ou carregue a lista de parafusos.');
+    const semTorque = pendentes(planilhaCarregada.itens);
+    if (semTorque.length) {
+      const nomes = [...new Set(semTorque.map((i) => i.grupo || i.descricao))];
+      return aviso(erro, 'erro', `A lista “${esc(planilhaCarregada.nome)}” tem ${semTorque.length} item(ns) sem torque definido: ` +
+        `${nomes.slice(0, 3).map(esc).join('; ')}${nomes.length > 3 ? '…' : ''}. Preencha os valores em <b>Editar listas</b>.`);
+    }
     const idFerr = $('in-torquimetro').value;
     const ferramenta = idFerr === 'digital' ? DIGITAL : config.torquimetros.find((t) => t.id === idFerr);
     if (!ferramenta) return aviso(erro, 'erro', 'Escolha o torquímetro.');
@@ -559,19 +643,17 @@
     };
 
     try {
-      // 1) foto repetida / muito parecida com outra já usada
+      // 1) foto muito parecida com a de outro item (de outro grupo): só alerta
+      const grupoAtual = item.grupo || item.id;
       let maisParecida = null;
       for (const h of hashesAnteriores()) {
+        if (h.idx === idx || (h.item.grupo || h.item.id) === grupoAtual) continue;
         const d = window.LeitorTorque.distanciaHamming(tentativa.hash, h.t.hash);
         if (!maisParecida || d < maisParecida.d) maisParecida = { d, ...h };
       }
-
-      if (maisParecida && maisParecida.d <= HASH_IDENTICA && maisParecida.t.resultado === 'aprovado') {
-        tentativa.resultado = 'repetida';
-        tentativa.alertas.push(`Foto praticamente idêntica à usada no item ${maisParecida.item.id}.`);
-      } else {
-        if (maisParecida && maisParecida.d <= HASH_PARECIDA && maisParecida.idx !== idx) {
-          tentativa.alertas.push(`Foto muito parecida com a do item ${maisParecida.item.id} (${maisParecida.d}/256).`);
+      {
+        if (maisParecida && maisParecida.d <= HASH_PARECIDA) {
+          tentativa.alertas.push(`Foto muito parecida com a do item “${maisParecida.item.descricao}” (${maisParecida.d}/256).`);
         }
         // 2) leitura do valor
         const r = lerValor(q.recorte, ferramenta);
@@ -791,7 +873,7 @@
     $('rel-cabecalho').innerHTML =
       `Chassi <b>${esc(ins.chassi)}</b> · Inspetor <b>${esc(ins.operador)}</b><br>` +
       `Início ${dataHora(ins.inicio)}${ins.fim ? ' · Fim ' + dataHora(ins.fim) : ' · em andamento'}<br>` +
-      `Planilha: ${esc(ins.planilha)} · Torquímetro ${esc(descreverFerramenta(ferramentaAtual()))}`;
+      `Lista: ${esc(ins.planilha)} · Torquímetro ${esc(descreverFerramenta(ferramentaAtual()))}`;
     $('rel-ok').textContent = ok;
     $('rel-sup').textContent = sup;
     $('rel-pend').textContent = pend;
@@ -1057,8 +1139,8 @@
     $('cfg-tentativas').value = config.tentativasSupervisor;
     $('cfg-pin').value = '';
     $('cfg-pin-status').textContent = config.pinHash ? 'PIN do supervisor configurado.' : 'Nenhum PIN configurado ainda.';
-    $('cfg-lista').value = config.listaParafusos || '';
-    previaLista();
+    fecharEditorLista();
+    renderListas();
     renderTorquimetros();
   }
 
@@ -1091,6 +1173,93 @@
     return isNaN(v) ? config.tolPadraoPct : Math.min(50, Math.max(0, v));
   }
 
+  // Listas de parafusos, uma por modelo de caminhão
+  let listaEditando = null; // { id, nome, texto, padrao } ou null
+
+  function renderListas() {
+    const el = $('cfg-listas');
+    const listas = listasDisponiveis();
+    if (!listas.length) {
+      el.innerHTML = '<p class="sub">Nenhuma lista cadastrada.</p>';
+      return;
+    }
+    el.innerHTML = listas.map((l) => {
+      let info;
+      try { info = resumoItens(lerLista(l.texto)); } catch (e) { info = '<b>com erro</b>'; }
+      const origem = l.padrao ? (l.editada ? 'padrão, editada neste aparelho' : 'padrão') : 'criada neste aparelho';
+      return `<div class="torq">
+        <div><b>${esc(l.nome)}</b><br><span class="sub">${info} · ${origem}</span></div>
+        <div class="linha-btn">
+          <button class="btn sec mini" data-editar-lista="${esc(l.id)}" type="button">Editar</button>
+          <button class="btn sec mini" data-excluir-lista="${esc(l.id)}" type="button">Excluir</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function abrirEditorLista(lista) {
+    listaEditando = lista;
+    $('cfg-lista-nome').value = lista.nome;
+    $('cfg-lista').value = lista.texto;
+    $('btn-cfg-lista-restaurar').classList.toggle('oculto', !(lista.padrao && lista.editada));
+    $('editor-lista').classList.remove('oculto');
+    $('cfg-listas-bloco').classList.add('oculto');
+    previaLista();
+    $('card-lista').scrollIntoView({ block: 'start' });
+  }
+
+  function fecharEditorLista() {
+    listaEditando = null;
+    $('editor-lista').classList.add('oculto');
+    $('cfg-listas-bloco').classList.remove('oculto');
+  }
+
+  function salvarListaLocal(lista) {
+    config.listas = config.listas.filter((l) => l.id !== lista.id).concat({ id: lista.id, nome: lista.nome, texto: lista.texto });
+    salvarConfig();
+  }
+
+  $('cfg-listas').addEventListener('click', (ev) => {
+    const idEd = ev.target.getAttribute('data-editar-lista');
+    const idEx = ev.target.getAttribute('data-excluir-lista');
+    if (idEd) abrirEditorLista(listasDisponiveis().find((l) => l.id === idEd));
+    if (idEx) {
+      const l = listasDisponiveis().find((x) => x.id === idEx);
+      if (!l || !confirm(`Excluir a lista “${l.nome}”?`)) return;
+      config.listas = config.listas.filter((x) => x.id !== idEx);
+      if (l.padrao) config.listasRemovidas = [...new Set(config.listasRemovidas.concat(idEx))];
+      salvarConfig();
+      renderListas();
+    }
+  });
+  $('btn-cfg-nova-lista').addEventListener('click', () => abrirEditorLista({
+    id: 'lista-' + Date.now().toString(36), nome: '', texto: '', padrao: false, editada: false,
+  }));
+  $('btn-cfg-listas-restaurar-padrao').addEventListener('click', () => {
+    if (!config.listasRemovidas.length) return alert('Nenhuma lista padrão foi excluída.');
+    config.listasRemovidas = [];
+    salvarConfig();
+    renderListas();
+  });
+  $('btn-cfg-lista-cancelar').addEventListener('click', fecharEditorLista);
+  $('btn-cfg-lista-salvar').addEventListener('click', () => {
+    if (!listaEditando) return;
+    const nome = $('cfg-lista-nome').value.trim();
+    const texto = $('cfg-lista').value;
+    if (!nome) return aviso($('cfg-lista-info'), 'erro', 'Dê um nome à lista (o modelo do caminhão, por exemplo: Atego 1719).');
+    if (!previaLista()) return;
+    salvarListaLocal({ id: listaEditando.id, nome, texto });
+    fecharEditorLista();
+    renderListas();
+  });
+  $('btn-cfg-lista-restaurar').addEventListener('click', () => {
+    if (!listaEditando || !confirm('Descartar as edições deste aparelho e voltar à lista padrão?')) return;
+    config.listas = config.listas.filter((l) => l.id !== listaEditando.id);
+    salvarConfig();
+    fecharEditorLista();
+    renderListas();
+  });
+
   function previaLista() {
     const el = $('cfg-lista-info');
     const texto = $('cfg-lista').value;
@@ -1100,11 +1269,15 @@
     }
     try {
       const itens = lerLista(texto, tolNaTela());
-      const linhas = itens.slice(0, 8).map((i) =>
-        `<tr><td>${esc(i.descricao)}</td><td>${fmt(i.nominal, 2)}</td><td>${fmt(i.min, 2)}–${fmt(i.max, 2)}</td></tr>`).join('');
-      aviso(el, 'ok', `✓ ${itens.length} parafuso(s)<table class="previa"><thead><tr><th>Parafuso</th><th>Torque</th>` +
-        `<th>Faixa aceita</th></tr></thead><tbody>${linhas}</tbody></table>` +
-        (itens.length > 8 ? `<span class="sub">… e mais ${itens.length - 8}</span>` : ''));
+      const linhasResumo = itens.resumo || itens.map((i) => Object.assign({ nome: i.descricao, qtd: 1 }, i));
+      const faixa = (i) => (i.pendente ? '<b>a definir</b>' : `${fmt(i.min, 2)}–${fmt(i.max, 2)}`);
+      const linhas = linhasResumo.slice(0, 30).map((i) =>
+        `<tr><td>${esc(i.nome)}${i.qtd > 1 ? ` <b>×${i.qtd}</b>` : ''}</td><td>${i.pendente ? '?' : fmt(i.nominal, 2)}</td><td>${faixa(i)}</td></tr>`).join('');
+      const pend = pendentes(itens).length;
+      aviso(el, pend ? 'alerta' : 'ok', `${pend ? '⚠️' : '✓'} ${resumoItens(itens)} (uma foto por item)` +
+        `<table class="previa"><thead><tr><th>Parafuso</th><th>Torque</th><th>Faixa aceita</th></tr></thead><tbody>${linhas}</tbody></table>` +
+        (linhasResumo.length > 30 ? `<span class="sub">… e mais ${linhasResumo.length - 30} linha(s)</span>` : '') +
+        (pend ? '<span class="sub">Itens com “?” precisam de torque antes de iniciar uma inspeção com esta lista.</span>' : ''));
       return itens;
     } catch (e) {
       aviso(el, 'erro', esc(e.message));
@@ -1113,25 +1286,27 @@
   }
 
   $('cfg-lista').addEventListener('input', previaLista);
-  $('cfg-tol').addEventListener('input', previaLista);
+  $('cfg-tol').addEventListener('input', () => { if (listaEditando) previaLista(); });
   $('cfg-lista-arquivo').addEventListener('change', (ev) => {
     const arq = ev.target.files[0];
     if (!arq) return;
     const leitor = new FileReader();
     leitor.onload = () => {
       const atual = $('cfg-lista').value.trim();
-      if (atual && !confirm(`Substituir a lista atual pelo conteúdo de “${arq.name}”?`)) return;
-      $('cfg-lista').value = String(leitor.result).replace(/^﻿/, '');
+      if (atual && !confirm(`Substituir o conteúdo da lista pelo de “${arq.name}”?`)) return;
+      $('cfg-lista').value = String(leitor.result).replace(/^\uFEFF/, '');
+      if (!$('cfg-lista-nome').value.trim()) $('cfg-lista-nome').value = arq.name.replace(/\.[^.]+$/, '');
       previaLista();
     };
     leitor.readAsText(arq, 'utf-8');
     ev.target.value = '';
   });
-  $('btn-cfg-lista-modelo').addEventListener('click', () => baixar('modelo-lista-parafusos.txt', '﻿' + MODELO_TXT, 'text/plain;charset=utf-8'));
+  $('btn-cfg-lista-modelo').addEventListener('click', () => baixar('modelo-lista-parafusos.txt', '\uFEFF' + MODELO_TXT, 'text/plain;charset=utf-8'));
   $('btn-cfg-lista-baixar').addEventListener('click', () => {
     const texto = $('cfg-lista').value;
     if (!texto.trim()) return alert('A lista está vazia.');
-    baixar('lista-parafusos.txt', '﻿' + texto.replace(/\r?\n/g, '\r\n'), 'text/plain;charset=utf-8');
+    const nome = ($('cfg-lista-nome').value.trim() || 'lista') .replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-');
+    baixar(`lista-${nome}.txt`, '\uFEFF' + texto.replace(/\r?\n/g, '\r\n'), 'text/plain;charset=utf-8');
   });
 
   $('btn-cfg-voltar').addEventListener('click', () => {
@@ -1143,13 +1318,10 @@
       const v = Number($(id).value);
       return isNaN(v) ? padrao : Math.min(max, Math.max(min, v));
     };
-    // valida a lista antes de salvar qualquer coisa
-    const textoLista = $('cfg-lista').value;
-    if (textoLista.trim() && !previaLista()) {
+    if (listaEditando) {
       $('card-lista').scrollIntoView({ block: 'start' });
-      return alert('Corrija a lista de parafusos antes de salvar (veja a mensagem em vermelho).');
+      return alert('Salve ou cancele a edição da lista de parafusos antes.');
     }
-    config.listaParafusos = textoLista.trim() ? textoLista : '';
     config.confiancaMinima = n('cfg-confianca', 0.5, 1, CONFIG_PADRAO.confiancaMinima);
     config.tolPadraoPct = n('cfg-tol', 0, 50, CONFIG_PADRAO.tolPadraoPct);
     config.intervaloMinimo = n('cfg-intervalo', 0, 120, CONFIG_PADRAO.intervaloMinimo);
@@ -1184,5 +1356,15 @@
   // descarta dados em formato antigo ou inválido
   if (estado && (!estado.itens || !estado.inspecao)) estado = null;
   delete config.motor; delete config.apiKey; delete config.modelo; // opções de versões antigas
+  if (!Array.isArray(config.listas)) config.listas = [];
+  if (!Array.isArray(config.listasRemovidas)) config.listasRemovidas = [];
+  if (config.listaParafusos && config.listaParafusos.trim()) {
+    // versão anterior tinha uma lista só: vira uma lista chamada “Minha lista”
+    config.listas.push({ id: 'minha-lista', nome: 'Minha lista', texto: config.listaParafusos });
+  }
+  if ('listaParafusos' in config) {
+    delete config.listaParafusos;
+    gravarJSON(CHAVE_CONFIG, config);
+  }
   atualizarInicio();
 })();

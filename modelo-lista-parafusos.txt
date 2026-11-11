@@ -2,6 +2,9 @@
 # Formato:  Nome do parafuso : torque (N·m)
 # A faixa aceita usa a tolerância padrão das configurações.
 # Para uma faixa própria, escreva por exemplo "90 ± 5" ou "85 a 95".
+# Use "?" para torque ainda não definido.
+# "×10" no fim do nome cria 10 itens (uma foto por porca).
 # Linhas começando com # são ignoradas.
 Parafuso 1 : 90
 Parafuso 2 : 120
+Roda dianteira esquerda - porca ×10 : ?

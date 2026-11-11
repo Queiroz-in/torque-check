@@ -17,8 +17,8 @@ para lugar nenhum.
 
 ## Como funciona
 
-1. O inspetor informa a matrícula, o chassi/VIN e escolhe o torquímetro. A lista de
-   parafusos e torques vem das configurações (veja *Lista de parafusos*).
+1. O inspetor informa a matrícula, o chassi/VIN, o torquímetro e o **modelo do caminhão**,
+   que define a lista de parafusos (veja *Listas de parafusos*).
 2. Para cada parafuso, na ordem da lista, o app mostra o torque nominal e a faixa aceita.
 3. O inspetor aperta o parafuso e fotografa o torquímetro: o visor dentro do
    retângulo verde (digital) ou o mostrador dentro do círculo verde (analógico).
@@ -29,7 +29,6 @@ para lugar nenhum.
 | ✅ Dentro da faixa | Item marcado como conferido, o app avança sozinho para o próximo |
 | ❌ Fora da faixa | Não marca. Pede para refazer o aperto e fotografar de novo |
 | ⚠️ Ilegível / leitura duvidosa | Não marca. Pede uma nova foto |
-| 🚫 Foto repetida | Não marca. Fica registrado no relatório |
 
 5. No fim, o app gera um relatório com o valor lido, o horário e a foto de cada
    parafuso, além de todas as tentativas reprovadas e alertas. Dá para exportar em
@@ -95,9 +94,10 @@ torquímetro de relógio ou digital com memória de pico.
 - **Só câmera ao vivo.** Não há opção de escolher foto da galeria.
 - **Ordem obrigatória.** Os itens são feitos na sequência; não dá para pular.
 - **Valor tem que bater.** O check só acontece com o valor lido dentro da faixa.
-- **Foto repetida é recusada.** O app guarda um "hash perceptual" do entorno do
-  torquímetro (a peça e o parafuso ao redor). Uma foto praticamente idêntica a outra
-  já usada é recusada, e fotos muito parecidas geram um alerta.
+- **Foto parecida gera alerta.** O app guarda um "hash perceptual" do entorno do
+  torquímetro (a peça e o parafuso ao redor). Uma foto muito parecida com a de outro
+  item fica marcada como alerta no relatório. Fotos das porcas de uma mesma roda podem
+  ser quase iguais e não geram alerta.
 - **Tempo entre apertos.** Conferências mais rápidas que o mínimo configurado
   (padrão 5 s) ficam marcadas como alerta.
 - **Tudo fica registrado.** Cada tentativa, inclusive as reprovadas, guarda a
@@ -108,41 +108,53 @@ torquímetro de relógio ou digital com memória de pico.
 - **Configurações protegidas.** Durante uma inspeção, mudar as regras exige o PIN do supervisor.
 - **Integridade do relatório.** O relatório exportado vem com um código SHA-256 do conteúdo.
 
-## Lista de parafusos
+## Listas de parafusos (uma por modelo de caminhão)
 
-Em **Configurações → Lista de parafusos**, digite (ou cole) um parafuso por linha, ou
-toque em **Carregar arquivo .txt**. A lista fica salva no aparelho e é usada
-automaticamente em toda inspeção nova. Formato:
+No início da inspeção, o inspetor escolhe o **modelo do caminhão**, e o app usa a lista
+de parafusos desse modelo. Cada item da lista é uma foto do torquímetro.
+
+### Listas padrão
+
+O app já vem com uma lista para **Atego**, **Axor**, **Atron** e **Actros (novo)**, com
+os itens de aperto do checklist de inspeção de entrega (porcas das rodas, fixações da
+suspensão da cabine, cruzeta/flange das árvores de transmissão, grampos das molas,
+braços triangulares, cintas do reservatório de combustível). Elas ficam no arquivo
+`listas-padrao.js`, que dá para editar direto no GitHub.
+
+- **Os torques vêm como `?` (a definir)**, porque o checklist não traz os valores; eles
+  estão no documento de serviço de cada modelo. Enquanto uma lista tiver `?`, o app não
+  inicia inspeção com ela e mostra quais itens faltam.
+- **Uma foto por porca:** `Roda dianteira esquerda - porca ×10 : 450 ± 20` vira 10 itens
+  (“porca 1 de 10” … “porca 10 de 10”). Confira o número de porcas por roda e de eixos de
+  cada versão do veículo.
+- **Este repositório é público.** Antes de escrever os torques em `listas-padrao.js`,
+  confirme na empresa se esses valores podem ser publicados. Se não puderem, preencha-os só
+  no aparelho (veja abaixo): o que é editado no aparelho não vai para o GitHub.
+
+### Editar, criar e excluir listas no aparelho
+
+Em **Configurações → Listas de parafusos**: **Editar** uma lista, **Nova lista** ou
+**Excluir**. Editar uma lista padrão muda só aquele aparelho (dá para voltar ao padrão
+depois). Formato, um parafuso por linha:
 
 ```
 Nome do parafuso : torque
 ```
 
-Exemplo:
-
-```
-Parafuso 1 : 90
-Parafuso 2 : 120
-Roda traseira - porca 1 : 600 Nm
-Cardã flange : 85,5 ± 4
-Escapamento : 40 a 44
-```
-
-- O torque é em N·m. A unidade (`Nm`, `N·m`) pode ser escrita ou não.
-- Só o torque (`90`): a faixa aceita usa a **tolerância padrão** das configurações (10%).
+- Só o torque (`90`): a faixa aceita usa a **tolerância padrão** (10%, em “Regras”).
 - Faixa própria: `90 ± 5` (ou `90 +- 5`, `90 ± 5%`) ou `85 a 95` (ou `85-95`).
-- Vírgula ou ponto decimal (`32,5` ou `32.5`).
-- Linhas começando com `#` são ignoradas (servem para comentários).
-- Enquanto você digita, o app mostra a faixa calculada de cada parafuso, ou o erro com o número da linha.
-- **Baixar modelo .txt** baixa um arquivo de exemplo, e **Baixar esta lista** salva a lista atual.
-  Veja também `modelo-lista-parafusos.txt`.
+- `?` = torque ainda não definido.
+- `×10` (ou `x10`) no fim do nome = 10 itens, uma foto cada.
+- Unidade (`Nm`, `N·m`) opcional; vírgula ou ponto decimal; linhas com `#` são comentários.
+- Enquanto você digita, o app mostra a faixa de cada linha ou o erro com o número da linha.
+- **Carregar arquivo .txt**, **Baixar modelo .txt** e **Baixar esta lista** também estão lá.
+  Veja `modelo-lista-parafusos.txt`.
 
 Na tela inicial, **Usar outro arquivo só nesta inspeção** aceita um `.txt` nesse formato
-ou uma planilha **CSV** do Excel (separada por ponto e vírgula), com as colunas
-`item; descricao; torque_nm; min_nm; max_nm` (ou `tolerancia_pct` no lugar de mín./máx.),
-como em `exemplo-planilha.csv`. Os valores dos exemplos são **fictícios**.
+ou uma planilha **CSV** do Excel (separada por ponto e vírgula) com as colunas
+`item; descricao; torque_nm; min_nm; max_nm`, como em `exemplo-planilha.csv` (valores fictícios).
 
-Durante uma inspeção, mudar a lista (ou qualquer configuração) exige o PIN do supervisor,
+Durante uma inspeção, mudar as listas (ou qualquer configuração) exige o PIN do supervisor,
 e a inspeção em andamento não é afetada: ela guarda a lista com que começou.
 
 ## Como rodar

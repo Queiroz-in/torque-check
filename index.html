@@ -104,6 +104,7 @@
   .arquivo-escondido { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
   textarea#cfg-lista { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; line-height: 1.5; min-height: 190px; }
   table.previa { margin-top: 8px; font-size: 13px; color: var(--txt); }
+  #cfg-lista-info .sub { display: block; margin-top: 6px; }
   table.previa th, table.previa td { padding: 4px 6px; border-bottom: 1px solid #00000014; }
   details.outro-arquivo { margin-top: 12px; border: 1px solid var(--linha); border-radius: 10px; padding: 10px 12px; }
   details.outro-arquivo summary { font-size: 14px; font-weight: 600; cursor: pointer; }
@@ -157,9 +158,10 @@
       <select id="in-torquimetro"></select>
       <button class="btn sec" id="btn-cadastrar-analogico" type="button">Cadastrar torquímetro analógico (de relógio)</button>
 
-      <label>Lista de parafusos</label>
-      <div id="info-planilha" class="aviso ok oculto" style="margin-top:0"></div>
-      <button class="btn sec" id="btn-editar-lista" type="button">Editar lista de parafusos</button>
+      <label for="in-lista">Modelo do caminhão (lista de parafusos)</label>
+      <select id="in-lista"></select>
+      <div id="info-planilha" class="aviso ok oculto"></div>
+      <button class="btn sec" id="btn-editar-lista" type="button">Editar listas</button>
       <details class="outro-arquivo">
         <summary>Usar outro arquivo só nesta inspeção (.txt ou .csv)</summary>
         <input id="in-planilha" type="file" accept=".txt,.csv,text/plain,text/csv">
@@ -167,7 +169,7 @@
           <b>.csv</b> (Excel, separado por ponto e vírgula): colunas <code>item; descricao; torque_nm; min_nm; max_nm</code>.</p>
         <div class="linha-btn">
           <button class="btn sec mini" id="btn-exemplo" type="button">Lista de exemplo</button>
-          <button class="btn sec mini" id="btn-lista-config" type="button">Voltar à lista salva</button>
+          <button class="btn sec mini" id="btn-lista-config" type="button">Voltar à lista do modelo</button>
         </div>
       </details>
       <div id="erro-inicio" class="aviso erro oculto"></div>
@@ -267,20 +269,38 @@
   <!-- ====================== CONFIGURAÇÕES ====================== -->
   <section id="tela-config" class="tela">
     <div class="card" id="card-lista">
-      <h2>Lista de parafusos</h2>
-      <p class="sub">Um parafuso por linha, no formato <code>Nome do parafuso : torque</code> (em N·m).
-        A faixa aceita usa a tolerância padrão (em “Regras”, abaixo). Para uma faixa própria, escreva
-        <code>90 ± 5</code> ou <code>85 a 95</code>. Linhas começando com <code>#</code> são ignoradas.</p>
-      <label for="cfg-lista">Parafusos</label>
-      <textarea id="cfg-lista" rows="9" spellcheck="false" autocapitalize="off" autocomplete="off"
-        placeholder="Parafuso 1 : 90&#10;Parafuso 2 : 120&#10;Roda dianteira - porca 1 : 450 ± 20"></textarea>
-      <label class="btn sec" for="cfg-lista-arquivo" style="margin-top:10px">Carregar arquivo .txt</label>
-      <input id="cfg-lista-arquivo" type="file" accept=".txt,text/plain" class="arquivo-escondido">
-      <div class="linha-btn">
-        <button class="btn sec mini" id="btn-cfg-lista-modelo" type="button">Baixar modelo .txt</button>
-        <button class="btn sec mini" id="btn-cfg-lista-baixar" type="button">Baixar esta lista</button>
+      <h2>Listas de parafusos</h2>
+      <div id="cfg-listas-bloco">
+        <p class="sub">Uma lista por modelo de caminhão, escolhida no início da inspeção. As listas padrão vêm
+          com o app; editar uma delas aqui muda só este aparelho.</p>
+        <div id="cfg-listas"></div>
+        <button class="btn sec" id="btn-cfg-nova-lista" type="button">Nova lista</button>
+        <button class="btn sec mini" id="btn-cfg-listas-restaurar-padrao" type="button">Restaurar listas padrão excluídas</button>
       </div>
-      <div id="cfg-lista-info" class="aviso oculto"></div>
+
+      <div id="editor-lista" class="oculto">
+        <label for="cfg-lista-nome">Modelo do caminhão</label>
+        <input id="cfg-lista-nome" autocomplete="off" placeholder="Ex.: Atego 1719">
+        <p class="sub" style="margin-top:10px">Um parafuso por linha: <code>Nome do parafuso : torque</code> (N·m).
+          Só o torque usa a tolerância padrão (em “Regras”); para uma faixa própria, escreva <code>90 ± 5</code> ou
+          <code>85 a 95</code>. Use <code>?</code> para torque ainda não definido. <code>×10</code> no fim do nome cria
+          10 itens, um por porca. Linhas começando com <code>#</code> são ignoradas.</p>
+        <label for="cfg-lista">Parafusos</label>
+        <textarea id="cfg-lista" rows="12" spellcheck="false" autocapitalize="off" autocomplete="off"
+          placeholder="Roda dianteira esquerda - porca ×10 : 450 ± 20&#10;Parafuso 1 : 90&#10;Parafuso 2 : ?"></textarea>
+        <label class="btn sec" for="cfg-lista-arquivo" style="margin-top:10px">Carregar arquivo .txt</label>
+        <input id="cfg-lista-arquivo" type="file" accept=".txt,text/plain" class="arquivo-escondido">
+        <div class="linha-btn">
+          <button class="btn sec mini" id="btn-cfg-lista-modelo" type="button">Baixar modelo .txt</button>
+          <button class="btn sec mini" id="btn-cfg-lista-baixar" type="button">Baixar esta lista</button>
+        </div>
+        <div id="cfg-lista-info" class="aviso oculto"></div>
+        <div class="linha-btn">
+          <button class="btn sec" id="btn-cfg-lista-cancelar" type="button">Cancelar</button>
+          <button class="btn" id="btn-cfg-lista-salvar" type="button">Salvar lista</button>
+        </div>
+        <button class="btn sec mini oculto" id="btn-cfg-lista-restaurar" type="button">Voltar à lista padrão</button>
+      </div>
     </div>
     <div class="card">
       <h2>Torquímetros analógicos</h2>
@@ -376,6 +396,7 @@
 
 <script src="leitor.js"></script>
 <script src="leitor-analogico.js"></script>
+<script src="listas-padrao.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
